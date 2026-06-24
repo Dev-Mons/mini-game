@@ -6,11 +6,15 @@
 
 - 그룹 추가, 삭제, 이름 변경
 - 그룹 안 이름 추가, 삭제, 이름 변경
-- 그룹 전체 참가/제외
-- 개인별 참가/제외
+- 체크박스로 그룹 전체 참가/제외
+- 체크박스로 개인별 참가/제외
 - 참가 중인 이름만 돌림판에 반영
+- 돌림판 시작 후 다시 누르면 정지
+- 당첨 기록 저장
+- 이번 주, 이번 달, 전체 당첨 횟수 표시
 - 현재 설정을 브라우저에 자동 저장
 - 공유 버튼으로 URL hash에 설정 저장
+- 당첨자에게 보낼 감사 메시지 공유
 
 ## 실행
 
@@ -25,6 +29,19 @@ python -m http.server 4173
 ```text
 http://127.0.0.1:4173
 ```
+
+## 확률 로직 확인
+
+확률 계산은 `probability.js`의 `WheelProbability` 클래스에 분리되어 있습니다.
+브라우저 콘솔에서 아래처럼 확인할 수 있습니다.
+
+```js
+const state = JSON.parse(localStorage.getItem("team-wheel-state-v1"));
+const entries = WheelProbability.getEligibleEntries(state.groups);
+WheelProbability.getEqualOdds(entries);
+```
+
+현재 구조는 참가 중인 사람 모두 동일 가중치 `1`입니다.
 
 ## GitHub Pages 배포
 

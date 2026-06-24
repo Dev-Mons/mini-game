@@ -159,6 +159,16 @@ h1 {
   line-height: 1.25;
 }
 
+.winner-share-button {
+  width: 100%;
+  min-height: 42px;
+  margin-top: 10px;
+  border-radius: 8px;
+  background: var(--blue);
+  color: #fff;
+  font-weight: 900;
+}
+
 .quick-actions {
   margin-top: 12px;
   display: grid;
@@ -242,30 +252,39 @@ input:focus {
 }
 
 .group-header {
-  grid-template-columns: 44px 1fr 36px;
+  grid-template-columns: 70px 1fr 36px;
   margin-bottom: 8px;
 }
 
 .member-row {
-  grid-template-columns: 42px 1fr 34px;
+  grid-template-columns: 66px 1fr 34px;
 }
 
-.group-toggle,
-.member-toggle {
-  height: 40px;
+.check-toggle {
+  min-height: 40px;
   border-radius: 8px;
-  color: #fff;
+  background: #edf2ee;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 13px;
   font-weight: 900;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.group-toggle.on,
-.member-toggle.on {
-  background: var(--green);
+.check-toggle input {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  accent-color: var(--green);
 }
 
-.group-toggle.off,
-.member-toggle.off {
-  background: #9aa49c;
+.check-toggle.checked {
+  background: #e5f4ec;
+  color: #12613f;
 }
 
 .group-name-input,
@@ -291,6 +310,84 @@ input:focus {
 
 .member-row.excluded {
   opacity: 0.55;
+}
+
+.history-panel {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.section-heading h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.section-heading button {
+  min-height: 34px;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #edf2ee;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.stats-list,
+.history-list {
+  display: grid;
+  gap: 8px;
+}
+
+.stats-list {
+  margin-bottom: 10px;
+}
+
+.stat-row,
+.history-list li {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafcf9;
+  padding: 9px 10px;
+}
+
+.stat-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.stat-name,
+.history-name {
+  font-weight: 900;
+}
+
+.stat-count,
+.history-time {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.history-empty {
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
 }
 
 .toast {

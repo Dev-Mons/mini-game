@@ -29,12 +29,22 @@
           <span class="result-label">결과</span>
           <strong id="resultName">참가자를 선택하세요</strong>
         </div>
+        <button class="winner-share-button" id="shareWinnerButton" type="button" hidden>당첨자에게 메시지 공유</button>
 
         <div class="quick-actions">
           <button id="selectAllButton" type="button">전체 참가</button>
           <button id="clearAllButton" type="button">전체 제외</button>
           <button id="resetButton" type="button">초기화</button>
         </div>
+
+        <section class="history-panel" aria-labelledby="history-title">
+          <div class="section-heading">
+            <h2 id="history-title">당첨 기록</h2>
+            <button id="clearHistoryButton" type="button">기록 삭제</button>
+          </div>
+          <div class="stats-list" id="statsList"></div>
+          <ol class="history-list" id="historyList"></ol>
+        </section>
       </section>
 
       <section class="manager-panel" aria-label="참가자 관리">
@@ -55,7 +65,10 @@
     <template id="groupTemplate">
       <article class="group-card">
         <header class="group-header">
-          <button class="group-toggle" type="button"></button>
+          <label class="check-toggle">
+            <input class="group-active-checkbox" type="checkbox" />
+            <span>참가</span>
+          </label>
           <input class="group-name-input" type="text" maxlength="16" aria-label="그룹명" />
           <button class="delete-group" type="button" title="그룹 삭제" aria-label="그룹 삭제">×</button>
         </header>
@@ -69,12 +82,16 @@
 
     <template id="memberTemplate">
       <div class="member-row">
-        <button class="member-toggle" type="button"></button>
+        <label class="check-toggle member-check">
+          <input class="member-active-checkbox" type="checkbox" />
+          <span>참가</span>
+        </label>
         <input class="member-name-edit" type="text" maxlength="8" aria-label="이름" />
         <button class="delete-member" type="button" title="이름 삭제" aria-label="이름 삭제">×</button>
       </div>
     </template>
 
+    <script src="./probability.js"></script>
     <script src="./game.js"></script>
   </body>
 </html>

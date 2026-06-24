@@ -1,4 +1,5 @@
 const STORAGE_KEY = "team-wheel-state-v1";
+const HISTORY_KEY = "team-wheel-history-v1";
 const COLORS = ["#e34b43", "#2368b8", "#1c8f62", "#f0b429", "#8b5cf6", "#13a3a8", "#f97316", "#4b5563"];
 
 const canvas = document.querySelector("#wheelCanvas");
@@ -11,15 +12,26 @@ const groupNameInput = document.querySelector("#groupNameInput");
 const groupTemplate = document.querySelector("#groupTemplate");
 const memberTemplate = document.querySelector("#memberTemplate");
 const shareButton = document.querySelector("#shareButton");
+const shareWinnerButton = document.querySelector("#shareWinnerButton");
 const selectAllButton = document.querySelector("#selectAllButton");
 const clearAllButton = document.querySelector("#clearAllButton");
 const resetButton = document.querySelector("#resetButton");
+const clearHistoryButton = document.querySelector("#clearHistoryButton");
+const statsList = document.querySelector("#statsList");
+const historyList = document.querySelector("#historyList");
 const toast = document.querySelector("#toast");
 
 let state = loadState();
+let winnerHistory = loadHistory();
 let rotation = 0;
-let spinning = false;
+let spinState = "idle";
+let spinAnimationId = 0;
+let spinEntries = null;
+let spinVelocity = 0;
+let lastFrameTime = 0;
+let stopAnimation = null;
 let toastTimer = 0;
+let lastWinner = null;
 
 render();
 
@@ -38,8 +50,9 @@ addGroupForm.addEventListener("submit", (event) => {
   commit();
 });
 
-spinButton.addEventListener("click", spinWheel);
+spinButton.addEventListener("click", handleSpinButton);
 shareButton.addEventListener("click", shareCurrentState);
+shareWinnerButton.addEventListener("click", shareWinnerMessage);
 
 selectAllButton.addEventListener("click", () => {
   state.groups.forEach((group) => {
@@ -62,16 +75,30 @@ clearAllButton.addEventListener("click", () => {
 });
 
 resetButton.addEventListener("click", () => {
-  if (!confirm("저장된 그룹과 이름을 모두 초기화할까요?")) return;
+  if (!confirm("저장된 그룹, 이름, 당첨 기록을 모두 초기화할까요?")) return;
+  stopImmediate();
   state = createDefaultState();
+  winnerHistory = [];
+  lastWinner = null;
   rotation = 0;
   location.hash = "";
+  localStorage.removeItem(HISTORY_KEY);
   commit();
+});
+
+clearHistoryButton.addEventListener("click", () => {
+  if (!confirm("당첨 기록만 삭제할까요?")) return;
+  winnerHistory = [];
+  lastWinner = null;
+  localStorage.removeItem(HISTORY_KEY);
+  renderHistory();
+  renderWinnerShare();
 });
 
 window.addEventListener("hashchange", () => {
   const sharedState = readStateFromHash();
   if (!sharedState) return;
+  stopImmediate();
   state = sharedState;
   rotation = 0;
   commit("공유된 설정을 불러왔습니다");
@@ -125,6 +152,25 @@ function loadState() {
   }
 }
 
+function loadHistory() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+    if (!Array.isArray(saved)) return [];
+    return saved
+      .filter((item) => item && item.name && item.createdAt)
+      .map((item) => ({
+        id: item.id || createId(),
+        memberId: item.memberId || "",
+        groupId: item.groupId || "",
+        name: String(item.name),
+        groupName: String(item.groupName || "그룹"),
+        createdAt: item.createdAt
+      }));
+  } catch {
+    return [];
+  }
+}
+
 function normalizeState(input) {
   if (!input || !Array.isArray(input.groups)) return createDefaultState();
 
@@ -150,9 +196,16 @@ function commit(message) {
   if (message) showToast(message);
 }
 
+function commitHistory() {
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(winnerHistory.slice(0, 200)));
+  renderHistory();
+}
+
 function render() {
   renderGroups();
-  drawWheel(getActiveMembers());
+  drawWheel(spinEntries || getActiveMembers());
+  renderHistory();
+  renderWinnerShare();
 }
 
 function renderGroups() {
@@ -161,7 +214,8 @@ function renderGroups() {
   state.groups.forEach((group) => {
     const fragment = groupTemplate.content.cloneNode(true);
     const card = fragment.querySelector(".group-card");
-    const groupToggle = fragment.querySelector(".group-toggle");
+    const groupCheckbox = fragment.querySelector(".group-active-checkbox");
+    const groupCheckLabel = fragment.querySelector(".check-toggle");
     const groupName = fragment.querySelector(".group-name-input");
     const deleteGroup = fragment.querySelector(".delete-group");
     const addMemberForm = fragment.querySelector(".add-member-form");
@@ -169,12 +223,13 @@ function renderGroups() {
     const memberList = fragment.querySelector(".member-list");
 
     card.classList.toggle("excluded", !group.active);
-    groupToggle.className = `group-toggle ${group.active ? "on" : "off"}`;
-    groupToggle.textContent = group.active ? "참가" : "제외";
+    groupCheckbox.checked = group.active;
+    groupCheckLabel.classList.toggle("checked", group.active);
+    groupCheckLabel.querySelector("span").textContent = group.active ? "참가" : "제외";
     groupName.value = group.name;
 
-    groupToggle.addEventListener("click", () => {
-      group.active = !group.active;
+    groupCheckbox.addEventListener("change", () => {
+      group.active = groupCheckbox.checked;
       commit();
     });
 
@@ -208,17 +263,19 @@ function renderGroups() {
 function createMemberRow(group, member) {
   const fragment = memberTemplate.content.cloneNode(true);
   const row = fragment.querySelector(".member-row");
-  const memberToggle = fragment.querySelector(".member-toggle");
+  const memberCheckbox = fragment.querySelector(".member-active-checkbox");
+  const memberCheckLabel = fragment.querySelector(".check-toggle");
   const memberName = fragment.querySelector(".member-name-edit");
   const deleteMember = fragment.querySelector(".delete-member");
 
   row.classList.toggle("excluded", !member.active || !group.active);
-  memberToggle.className = `member-toggle ${member.active ? "on" : "off"}`;
-  memberToggle.textContent = member.active ? "참가" : "제외";
+  memberCheckbox.checked = member.active;
+  memberCheckLabel.classList.toggle("checked", member.active);
+  memberCheckLabel.querySelector("span").textContent = member.active ? "참가" : "제외";
   memberName.value = member.name;
 
-  memberToggle.addEventListener("click", () => {
-    member.active = !member.active;
+  memberCheckbox.addEventListener("change", () => {
+    member.active = memberCheckbox.checked;
     commit();
   });
 
@@ -236,13 +293,7 @@ function createMemberRow(group, member) {
 }
 
 function getActiveMembers() {
-  return state.groups.flatMap((group) =>
-    group.active
-      ? group.members
-          .filter((member) => member.active && member.name.trim())
-          .map((member) => ({ id: member.id, name: member.name.trim(), group: group.name }))
-      : []
-  );
+  return WheelProbability.getEligibleEntries(state.groups);
 }
 
 function drawWheel(entries) {
@@ -265,12 +316,14 @@ function drawWheel(entries) {
     ctx.textBaseline = "middle";
     ctx.fillText("참가자 없음", 0, 0);
     spinButton.disabled = true;
+    spinButton.textContent = "돌리기";
     resultName.textContent = "참가자를 선택하세요";
     ctx.restore();
     return;
   }
 
-  spinButton.disabled = spinning;
+  spinButton.disabled = spinState === "stopping";
+  spinButton.textContent = spinState === "spinning" ? "정지" : spinState === "stopping" ? "정지 중" : "돌리기";
   const slice = (Math.PI * 2) / entries.length;
 
   entries.forEach((entry, index) => {
@@ -289,7 +342,7 @@ function drawWheel(entries) {
     ctx.save();
     ctx.rotate(start + slice / 2);
     ctx.fillStyle = "#ffffff";
-    ctx.font = "800 31px sans-serif";
+    ctx.font = entries.length > 10 ? "800 25px sans-serif" : "800 31px sans-serif";
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
     ctx.shadowColor = "rgba(0, 0, 0, 0.25)";
@@ -308,51 +361,246 @@ function drawWheel(entries) {
   ctx.restore();
 }
 
-function spinWheel() {
-  const entries = getActiveMembers();
-  if (spinning || entries.length === 0) return;
+function handleSpinButton() {
+  if (spinState === "idle") {
+    startSpin();
+    return;
+  }
 
-  spinning = true;
-  spinButton.disabled = true;
-  resultName.textContent = "돌아가는 중";
-
-  const winnerIndex = Math.floor(Math.random() * entries.length);
-  const sliceDegrees = 360 / entries.length;
-  const winnerCenter = winnerIndex * sliceDegrees + sliceDegrees / 2;
-  const currentNormalized = normalizeDegrees(rotation);
-  const desiredPointerAngle = 360 - winnerCenter;
-  const extraTurns = 5 + Math.floor(Math.random() * 3);
-  const delta = extraTurns * 360 + normalizeDegrees(desiredPointerAngle - currentNormalized);
-  const start = performance.now();
-  const duration = 4300;
-  const from = rotation;
-  const to = rotation + delta;
-
-  requestAnimationFrame(function animate(now) {
-    const progress = Math.min(1, (now - start) / duration);
-    const eased = easeOutCubic(progress);
-    rotation = from + (to - from) * eased;
-    canvas.style.setProperty("--wheel-rotation", `${rotation}deg`);
-
-    if (progress < 1) {
-      requestAnimationFrame(animate);
-      return;
-    }
-
-    rotation = to;
-    canvas.style.setProperty("--wheel-rotation", `${rotation}deg`);
-    resultName.textContent = `${entries[winnerIndex].name} (${entries[winnerIndex].group})`;
-    spinning = false;
-    drawWheel(getActiveMembers());
-  });
+  if (spinState === "spinning") {
+    stopSpin();
+  }
 }
 
-function normalizeDegrees(degrees) {
-  return ((degrees % 360) + 360) % 360;
+function startSpin() {
+  const entries = getActiveMembers();
+  if (entries.length === 0) return;
+
+  spinEntries = entries;
+  spinState = "spinning";
+  spinVelocity = 640 + Math.random() * 220;
+  lastFrameTime = performance.now();
+  lastWinner = null;
+  resultName.textContent = "돌아가는 중";
+  renderWinnerShare();
+  drawWheel(spinEntries);
+  animateSpin(lastFrameTime);
+}
+
+function animateSpin(now) {
+  if (spinState !== "spinning") return;
+
+  const deltaSeconds = Math.min(0.05, (now - lastFrameTime) / 1000);
+  lastFrameTime = now;
+  rotation += spinVelocity * deltaSeconds;
+  setWheelRotation(rotation);
+  spinAnimationId = requestAnimationFrame(animateSpin);
+}
+
+function stopSpin() {
+  if (spinState !== "spinning" || !spinEntries || spinEntries.length === 0) return;
+
+  cancelAnimationFrame(spinAnimationId);
+  spinState = "stopping";
+  resultName.textContent = "멈추는 중";
+  drawWheel(spinEntries);
+
+  const winnerIndex = WheelProbability.pickIndex(spinEntries);
+  const sliceDegrees = 360 / spinEntries.length;
+  const winnerCenter = winnerIndex * sliceDegrees + sliceDegrees / 2;
+  const currentNormalized = WheelProbability.normalizeDegrees(rotation);
+  const desiredPointerAngle = 360 - winnerCenter;
+  const extraTurns = 2 + Math.floor(Math.random() * 3);
+  const delta = extraTurns * 360 + WheelProbability.normalizeDegrees(desiredPointerAngle - currentNormalized);
+
+  stopAnimation = {
+    startTime: performance.now(),
+    duration: 2600 + Math.random() * 800,
+    from: rotation,
+    to: rotation + delta,
+    winnerIndex
+  };
+
+  requestAnimationFrame(animateStop);
+}
+
+function animateStop(now) {
+  if (spinState !== "stopping" || !stopAnimation) return;
+
+  const progress = Math.min(1, (now - stopAnimation.startTime) / stopAnimation.duration);
+  const eased = easeOutCubic(progress);
+  rotation = stopAnimation.from + (stopAnimation.to - stopAnimation.from) * eased;
+  setWheelRotation(rotation);
+
+  if (progress < 1) {
+    requestAnimationFrame(animateStop);
+    return;
+  }
+
+  const winner = spinEntries[stopAnimation.winnerIndex];
+  finishSpin(winner);
+}
+
+function finishSpin(winner) {
+  rotation = WheelProbability.normalizeDegrees(rotation);
+  setWheelRotation(rotation);
+  spinState = "idle";
+  stopAnimation = null;
+  spinEntries = null;
+  resultName.textContent = `${winner.name} (${winner.groupName})`;
+  lastWinner = recordWinner(winner);
+  drawWheel(getActiveMembers());
+  commitHistory();
+  renderWinnerShare();
+}
+
+function stopImmediate() {
+  cancelAnimationFrame(spinAnimationId);
+  spinState = "idle";
+  stopAnimation = null;
+  spinEntries = null;
+  spinButton.disabled = false;
+  spinButton.textContent = "돌리기";
+}
+
+function setWheelRotation(degrees) {
+  canvas.style.setProperty("--wheel-rotation", `${degrees}deg`);
 }
 
 function easeOutCubic(value) {
   return 1 - Math.pow(1 - value, 3);
+}
+
+function recordWinner(winner) {
+  const record = {
+    id: createId(),
+    memberId: winner.memberId || "",
+    groupId: winner.groupId || "",
+    name: winner.name,
+    groupName: winner.groupName,
+    createdAt: new Date().toISOString()
+  };
+  winnerHistory.unshift(record);
+  winnerHistory = winnerHistory.slice(0, 200);
+  return record;
+}
+
+function renderHistory() {
+  const stats = buildStats(winnerHistory);
+  statsList.replaceChildren();
+  historyList.replaceChildren();
+
+  if (stats.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "history-empty";
+    empty.textContent = "아직 당첨 기록이 없습니다";
+    statsList.appendChild(empty);
+  } else {
+    stats.slice(0, 8).forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "stat-row";
+      row.innerHTML = `
+        <span class="stat-name">${escapeHtml(item.name)} <span class="stat-count">(${escapeHtml(item.groupName)})</span></span>
+        <span class="stat-count">주 ${item.weekCount} / 월 ${item.monthCount} / 총 ${item.totalCount}</span>
+      `;
+      statsList.appendChild(row);
+    });
+  }
+
+  winnerHistory.slice(0, 10).forEach((item) => {
+    const row = document.createElement("li");
+    row.innerHTML = `
+      <div class="history-name">${escapeHtml(item.name)} (${escapeHtml(item.groupName)})</div>
+      <div class="history-time">${formatDateTime(item.createdAt)}</div>
+    `;
+    historyList.appendChild(row);
+  });
+}
+
+function buildStats(records) {
+  const now = new Date();
+  const weekStart = getWeekStart(now);
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const map = new Map();
+
+  records.forEach((record) => {
+    const key = `${record.memberId || record.name}|${record.groupName}`;
+    const createdAt = new Date(record.createdAt);
+    if (!map.has(key)) {
+      map.set(key, {
+        name: record.name,
+        groupName: record.groupName,
+        weekCount: 0,
+        monthCount: 0,
+        totalCount: 0,
+        latestAt: createdAt
+      });
+    }
+
+    const item = map.get(key);
+    item.totalCount += 1;
+    if (createdAt >= weekStart) item.weekCount += 1;
+    if (createdAt >= monthStart) item.monthCount += 1;
+    if (createdAt > item.latestAt) item.latestAt = createdAt;
+  });
+
+  return [...map.values()].sort((a, b) => {
+    if (b.monthCount !== a.monthCount) return b.monthCount - a.monthCount;
+    if (b.weekCount !== a.weekCount) return b.weekCount - a.weekCount;
+    if (b.totalCount !== a.totalCount) return b.totalCount - a.totalCount;
+    return b.latestAt - a.latestAt;
+  });
+}
+
+function getWeekStart(date) {
+  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const day = start.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  start.setDate(start.getDate() + diff);
+  return start;
+}
+
+function formatDateTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return new Intl.DateTimeFormat("ko-KR", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(date);
+}
+
+function renderWinnerShare() {
+  shareWinnerButton.hidden = !lastWinner;
+}
+
+async function shareWinnerMessage() {
+  if (!lastWinner) return;
+
+  const text = `${lastWinner.name}님 고맙습니다. ${formatDateTime(lastWinner.createdAt)} 복불복 돌림판 당첨 기록입니다.`;
+  const shareData = {
+    title: "복불복 돌림판 당첨",
+    text,
+    url: location.href.split("#")[0]
+  };
+
+  if (navigator.share) {
+    try {
+      await navigator.share(shareData);
+      return;
+    } catch (error) {
+      if (error && error.name === "AbortError") return;
+    }
+  }
+
+  try {
+    await navigator.clipboard.writeText(`${text}\n${shareData.url}`);
+    showToast("메시지를 복사했습니다");
+  } catch {
+    showToast("공유가 지원되지 않는 웹뷰입니다");
+  }
 }
 
 async function shareCurrentState() {
@@ -365,7 +613,7 @@ async function shareCurrentState() {
   };
   const encoded = encodeState(compactState);
   const url = `${location.href.split("#")[0]}#${encoded}`;
-  history.replaceState(null, "", `#${encoded}`);
+  window.history.replaceState(null, "", `#${encoded}`);
 
   try {
     await navigator.clipboard.writeText(url);
@@ -417,6 +665,15 @@ function decodeState(value) {
   const binary = atob(padded);
   const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
   return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 function showToast(message) {
