@@ -486,7 +486,7 @@ function recordWinner(winner) {
 }
 
 function renderHistory() {
-  const stats = buildStats(winnerHistory);
+  const stats = buildStats(winnerHistory, getActiveMembers());
   statsList.replaceChildren();
   historyList.replaceChildren();
 
@@ -499,9 +499,19 @@ function renderHistory() {
     stats.slice(0, 8).forEach((item) => {
       const row = document.createElement("div");
       row.className = "stat-row";
+      const expectedLabel = item.expectedPercent === null ? "현재 제외" : `기대 ${formatPercent(item.expectedPercent)}`;
       row.innerHTML = `
-        <span class="stat-name">${escapeHtml(item.name)} <span class="stat-count">(${escapeHtml(item.groupName)})</span></span>
-        <span class="stat-count">주 ${item.weekCount} / 월 ${item.monthCount} / 총 ${item.totalCount}</span>
+        <div>
+          <div class="stat-topline">
+            <span class="stat-name">${escapeHtml(item.name)} <span class="stat-count">(${escapeHtml(item.groupName)})</span></span>
+            <span class="stat-percent">${formatPercent(item.totalPercent)}</span>
+          </div>
+          <div class="stat-meter" aria-label="전체 당첨 비율 ${formatPercent(item.totalPercent)}">
+            <span style="width: ${clampPercent(item.totalPercent)}%"></span>
+          </div>
+          <div class="stat-detail">주 ${item.weekCount}회 ${formatPercent(item.weekPercent)} · 월 ${item.monthCount}회 ${formatPercent(item.monthPercent)} · 총 ${item.totalCount}회</div>
+        </div>
+        <span class="stat-expected">${expectedLabel}</span>
       `;
       statsList.appendChild(row);
     });
@@ -517,17 +527,29 @@ function renderHistory() {
   });
 }
 
-function buildStats(records) {
+function buildStats(records, activeEntries) {
   const now = new Date();
   const weekStart = getWeekStart(now);
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const map = new Map();
+  const activeOdds = new Map();
+  const odds = WheelProbability.getEqualOdds(activeEntries);
+  const weekTotal = records.filter((record) => new Date(record.createdAt) >= weekStart).length;
+  const monthTotal = records.filter((record) => new Date(record.createdAt) >= monthStart).length;
+  const total = records.length;
+
+  odds.forEach((entry) => {
+    activeOdds.set(`${entry.memberId}|${entry.groupName}`, entry.percent);
+    activeOdds.set(`${entry.name}|${entry.groupName}`, entry.percent);
+  });
 
   records.forEach((record) => {
     const key = `${record.memberId || record.name}|${record.groupName}`;
     const createdAt = new Date(record.createdAt);
     if (!map.has(key)) {
       map.set(key, {
+        memberId: record.memberId || "",
+        groupId: record.groupId || "",
         name: record.name,
         groupName: record.groupName,
         weekCount: 0,
@@ -544,12 +566,31 @@ function buildStats(records) {
     if (createdAt > item.latestAt) item.latestAt = createdAt;
   });
 
-  return [...map.values()].sort((a, b) => {
+  return [...map.values()].map((item) => ({
+    ...item,
+    weekPercent: weekTotal > 0 ? (item.weekCount / weekTotal) * 100 : 0,
+    monthPercent: monthTotal > 0 ? (item.monthCount / monthTotal) * 100 : 0,
+    totalPercent: total > 0 ? (item.totalCount / total) * 100 : 0,
+    expectedPercent: activeOdds.has(`${item.memberId || item.name}|${item.groupName}`)
+      ? activeOdds.get(`${item.memberId || item.name}|${item.groupName}`)
+      : null
+  })).sort((a, b) => {
     if (b.monthCount !== a.monthCount) return b.monthCount - a.monthCount;
     if (b.weekCount !== a.weekCount) return b.weekCount - a.weekCount;
     if (b.totalCount !== a.totalCount) return b.totalCount - a.totalCount;
     return b.latestAt - a.latestAt;
   });
+}
+
+function formatPercent(value) {
+  if (!Number.isFinite(value)) return "0%";
+  if (value === 0 || value >= 10) return `${Math.round(value)}%`;
+  return `${value.toFixed(1)}%`;
+}
+
+function clampPercent(value) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, value));
 }
 
 function getWeekStart(date) {
