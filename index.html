@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>팀 복불복 돌림판</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="wheel-panel" aria-labelledby="app-title">
+        <div class="top-bar">
+          <div>
+            <p class="eyebrow">Team Picker</p>
+            <h1 id="app-title">복불복 돌림판</h1>
+          </div>
+          <button class="icon-button" id="shareButton" type="button" title="공유 링크 복사" aria-label="공유 링크 복사">
+            <span aria-hidden="true">↗</span>
+          </button>
+        </div>
+
+        <div class="wheel-wrap">
+          <div class="pointer" aria-hidden="true"></div>
+          <canvas id="wheelCanvas" width="720" height="720" aria-label="돌림판"></canvas>
+          <button class="spin-button" id="spinButton" type="button">돌리기</button>
+        </div>
+
+        <div class="result-box" id="resultBox" aria-live="polite">
+          <span class="result-label">결과</span>
+          <strong id="resultName">참가자를 선택하세요</strong>
+        </div>
+
+        <div class="quick-actions">
+          <button id="selectAllButton" type="button">전체 참가</button>
+          <button id="clearAllButton" type="button">전체 제외</button>
+          <button id="resetButton" type="button">초기화</button>
+        </div>
+      </section>
+
+      <section class="manager-panel" aria-label="참가자 관리">
+        <form class="add-group-form" id="addGroupForm">
+          <label for="groupNameInput">그룹 추가</label>
+          <div class="inline-form">
+            <input id="groupNameInput" name="groupName" type="text" maxlength="16" placeholder="예: 기획팀" autocomplete="off" />
+            <button type="submit">추가</button>
+          </div>
+        </form>
+
+        <div class="group-list" id="groupList"></div>
+      </section>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <template id="groupTemplate">
+      <article class="group-card">
+        <header class="group-header">
+          <button class="group-toggle" type="button"></button>
+          <input class="group-name-input" type="text" maxlength="16" aria-label="그룹명" />
+          <button class="delete-group" type="button" title="그룹 삭제" aria-label="그룹 삭제">×</button>
+        </header>
+        <form class="add-member-form">
+          <input class="member-name-input" type="text" maxlength="8" placeholder="이름 추가" autocomplete="off" />
+          <button type="submit">추가</button>
+        </form>
+        <div class="member-list"></div>
+      </article>
+    </template>
+
+    <template id="memberTemplate">
+      <div class="member-row">
+        <button class="member-toggle" type="button"></button>
+        <input class="member-name-edit" type="text" maxlength="8" aria-label="이름" />
+        <button class="delete-member" type="button" title="이름 삭제" aria-label="이름 삭제">×</button>
+      </div>
+    </template>
+
+    <script src="./game.js"></script>
+  </body>
+</html>
