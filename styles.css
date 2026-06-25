@@ -252,16 +252,17 @@ input:focus {
 }
 
 .group-header {
-  grid-template-columns: 70px 1fr 36px;
+  grid-template-columns: 44px 1fr 36px;
   margin-bottom: 8px;
 }
 
 .member-row {
-  grid-template-columns: 66px 1fr 34px;
+  grid-template-columns: 44px 1fr 34px;
 }
 
 .check-toggle {
   min-height: 40px;
+  width: 44px;
   border-radius: 8px;
   background: #edf2ee;
   color: var(--ink);

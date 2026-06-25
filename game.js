@@ -222,7 +222,6 @@ function renderGroups() {
     card.classList.toggle("excluded", !group.active);
     groupCheckbox.checked = group.active;
     groupCheckLabel.classList.toggle("checked", group.active);
-    groupCheckLabel.querySelector("span").textContent = group.active ? "참가" : "제외";
     groupName.value = group.name;
 
     groupCheckbox.addEventListener("change", () => {
@@ -268,7 +267,6 @@ function createMemberRow(group, member) {
   row.classList.toggle("excluded", !member.active || !group.active);
   memberCheckbox.checked = member.active;
   memberCheckLabel.classList.toggle("checked", member.active);
-  memberCheckLabel.querySelector("span").textContent = member.active ? "참가" : "제외";
   memberName.value = member.name;
 
   memberCheckbox.addEventListener("change", () => {
