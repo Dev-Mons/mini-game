@@ -75,24 +75,11 @@ clearAllButton.addEventListener("click", () => {
 });
 
 resetButton.addEventListener("click", () => {
-  if (!confirm("저장된 그룹, 이름, 당첨 기록을 모두 초기화할까요?")) return;
-  stopImmediate();
-  state = createDefaultState();
-  winnerHistory = [];
-  lastWinner = null;
-  rotation = 0;
-  location.hash = "";
-  localStorage.removeItem(HISTORY_KEY);
-  commit();
+  clearAllHistory();
 });
 
 clearHistoryButton.addEventListener("click", () => {
-  if (!confirm("당첨 기록만 삭제할까요?")) return;
-  winnerHistory = [];
-  lastWinner = null;
-  localStorage.removeItem(HISTORY_KEY);
-  renderHistory();
-  renderWinnerShare();
+  clearAllHistory();
 });
 
 window.addEventListener("hashchange", () => {
@@ -199,6 +186,16 @@ function commit(message) {
 function commitHistory() {
   localStorage.setItem(HISTORY_KEY, JSON.stringify(winnerHistory.slice(0, 200)));
   renderHistory();
+}
+
+function clearAllHistory() {
+  if (!confirm("당첨 기록만 삭제할까요? 팀과 이름은 유지됩니다.")) return;
+  winnerHistory = [];
+  lastWinner = null;
+  localStorage.removeItem(HISTORY_KEY);
+  renderHistory();
+  renderWinnerShare();
+  showToast("당첨 기록을 초기화했습니다");
 }
 
 function render() {
@@ -511,8 +508,19 @@ function renderHistory() {
           </div>
           <div class="stat-detail">주 ${item.weekCount}회 ${formatPercent(item.weekPercent)} · 월 ${item.monthCount}회 ${formatPercent(item.monthPercent)} · 총 ${item.totalCount}회</div>
         </div>
-        <span class="stat-expected">${expectedLabel}</span>
       `;
+      const actions = document.createElement("div");
+      actions.className = "stat-actions";
+      const expected = document.createElement("span");
+      expected.className = "stat-expected";
+      expected.textContent = expectedLabel;
+      const deleteButton = document.createElement("button");
+      deleteButton.className = "stat-delete";
+      deleteButton.type = "button";
+      deleteButton.textContent = "개인 삭제";
+      deleteButton.addEventListener("click", () => deletePersonHistory(item));
+      actions.append(expected, deleteButton);
+      row.appendChild(actions);
       statsList.appendChild(row);
     });
   }
@@ -520,9 +528,19 @@ function renderHistory() {
   winnerHistory.slice(0, 10).forEach((item) => {
     const row = document.createElement("li");
     row.innerHTML = `
-      <div class="history-name">${escapeHtml(item.name)} (${escapeHtml(item.groupName)})</div>
-      <div class="history-time">${formatDateTime(item.createdAt)}</div>
+      <div>
+        <div class="history-name">${escapeHtml(item.name)} (${escapeHtml(item.groupName)})</div>
+        <div class="history-time">${formatDateTime(item.createdAt)}</div>
+      </div>
     `;
+    const deleteButton = document.createElement("button");
+    deleteButton.className = "history-delete";
+    deleteButton.type = "button";
+    deleteButton.title = "이 기록 삭제";
+    deleteButton.setAttribute("aria-label", "이 기록 삭제");
+    deleteButton.textContent = "×";
+    deleteButton.addEventListener("click", () => deleteHistoryItem(item.id));
+    row.appendChild(deleteButton);
     historyList.appendChild(row);
   });
 }
@@ -544,10 +562,11 @@ function buildStats(records, activeEntries) {
   });
 
   records.forEach((record) => {
-    const key = `${record.memberId || record.name}|${record.groupName}`;
+    const key = getRecordKey(record);
     const createdAt = new Date(record.createdAt);
     if (!map.has(key)) {
       map.set(key, {
+        key,
         memberId: record.memberId || "",
         groupId: record.groupId || "",
         name: record.name,
@@ -580,6 +599,33 @@ function buildStats(records, activeEntries) {
     if (b.totalCount !== a.totalCount) return b.totalCount - a.totalCount;
     return b.latestAt - a.latestAt;
   });
+}
+
+function deletePersonHistory(item) {
+  if (!confirm(`${item.name}님의 당첨 기록을 모두 삭제할까요?`)) return;
+  winnerHistory = winnerHistory.filter((record) => getRecordKey(record) !== item.key);
+  if (lastWinner && getRecordKey(lastWinner) === item.key) {
+    lastWinner = null;
+  }
+  commitHistory();
+  renderWinnerShare();
+  showToast("개인 기록을 삭제했습니다");
+}
+
+function deleteHistoryItem(id) {
+  if (!confirm("이 당첨 기록을 삭제할까요?")) return;
+  const deleted = winnerHistory.find((record) => record.id === id);
+  winnerHistory = winnerHistory.filter((record) => record.id !== id);
+  if (deleted && lastWinner && lastWinner.id === deleted.id) {
+    lastWinner = null;
+  }
+  commitHistory();
+  renderWinnerShare();
+  showToast("기록을 삭제했습니다");
+}
+
+function getRecordKey(record) {
+  return `${record.memberId || record.name}|${record.groupName}`;
 }
 
 function formatPercent(value) {
