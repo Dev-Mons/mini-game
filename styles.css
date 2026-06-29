@@ -342,6 +342,69 @@ input:focus {
   font-weight: 800;
 }
 
+.expense-panel {
+  margin-bottom: 10px;
+  display: grid;
+  grid-template-columns: auto minmax(124px, 160px) 1fr;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fafcf9;
+  padding: 9px 10px;
+}
+
+.expense-panel label,
+.expense-summary {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.money-input {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.money-input input {
+  min-height: 36px;
+  padding: 0 9px;
+  font-weight: 900;
+}
+
+.money-input span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.period-tabs {
+  margin-bottom: 10px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 4px;
+  border-radius: 8px;
+  background: #edf2ee;
+}
+
+.period-tab {
+  min-height: 34px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.period-tab.selected {
+  background: #ffffff;
+  color: var(--ink);
+  box-shadow: 0 1px 5px rgba(23, 32, 27, 0.12);
+}
+
 .stats-list,
 .history-list {
   display: grid;
@@ -466,7 +529,15 @@ input:focus {
   font-weight: 800;
 }
 
+.history-list .history-empty {
+  display: block;
+}
+
 @media (max-width: 420px) {
+  .expense-panel {
+    grid-template-columns: 1fr;
+  }
+
   .stat-row {
     grid-template-columns: 1fr;
   }

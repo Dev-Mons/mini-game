@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>팀 복불복 돌림판</title>
+    <title>팀 돌림판</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -12,7 +12,7 @@
         <div class="top-bar">
           <div>
             <p class="eyebrow">Team Picker</p>
-            <h1 id="app-title">복불복 돌림판</h1>
+            <h1 id="app-title">돌림판</h1>
           </div>
           <button class="icon-button" id="shareButton" type="button" title="공유 링크 복사" aria-label="공유 링크 복사">
             <span aria-hidden="true">↗</span>
@@ -39,8 +39,21 @@
 
         <section class="history-panel" aria-labelledby="history-title">
           <div class="section-heading">
-            <h2 id="history-title">당첨 기록</h2>
+            <h2 id="history-title">돌림판 기록</h2>
             <button id="clearHistoryButton" type="button">전체 삭제</button>
+          </div>
+          <div class="expense-panel" aria-label="카페 비용 예상">
+            <label for="drinkCostInput">음료 1잔</label>
+            <div class="money-input">
+              <input id="drinkCostInput" type="number" min="0" step="100" inputmode="numeric" />
+              <span>원</span>
+            </div>
+            <div class="expense-summary" id="expenseSummary"></div>
+          </div>
+          <div class="period-tabs" role="tablist" aria-label="기록 기간">
+            <button class="period-tab" type="button" data-period="week">이번 주</button>
+            <button class="period-tab" type="button" data-period="month">이번 달</button>
+            <button class="period-tab" type="button" data-period="all">전체</button>
           </div>
           <div class="stats-list" id="statsList"></div>
           <ol class="history-list" id="historyList"></ol>

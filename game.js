@@ -19,6 +19,9 @@ const resetButton = document.querySelector("#resetButton");
 const clearHistoryButton = document.querySelector("#clearHistoryButton");
 const statsList = document.querySelector("#statsList");
 const historyList = document.querySelector("#historyList");
+const drinkCostInput = document.querySelector("#drinkCostInput");
+const expenseSummary = document.querySelector("#expenseSummary");
+const periodTabs = document.querySelectorAll(".period-tab");
 const toast = document.querySelector("#toast");
 
 let state = loadState();
@@ -32,6 +35,7 @@ let lastFrameTime = 0;
 let stopAnimation = null;
 let toastTimer = 0;
 let lastWinner = null;
+let selectedStatsPeriod = "month";
 
 render();
 
@@ -82,6 +86,23 @@ clearHistoryButton.addEventListener("click", () => {
   clearAllHistory();
 });
 
+drinkCostInput.addEventListener("change", () => {
+  state.drinkCost = normalizeDrinkCost(drinkCostInput.value);
+  commit();
+});
+
+drinkCostInput.addEventListener("input", () => {
+  state.drinkCost = normalizeDrinkCost(drinkCostInput.value);
+  renderHistory();
+});
+
+periodTabs.forEach((button) => {
+  button.addEventListener("click", () => {
+    selectedStatsPeriod = button.dataset.period || "month";
+    renderHistory();
+  });
+});
+
 window.addEventListener("hashchange", () => {
   const sharedState = readStateFromHash();
   if (!sharedState) return;
@@ -93,6 +114,7 @@ window.addEventListener("hashchange", () => {
 
 function createDefaultState() {
   return {
+    drinkCost: 1200,
     groups: [
       {
         id: createId(),
@@ -151,6 +173,9 @@ function loadHistory() {
         groupId: item.groupId || "",
         name: String(item.name),
         groupName: String(item.groupName || "그룹"),
+        participantCount: normalizeParticipantCount(item.participantCount),
+        oddsPercent: normalizeOptionalNumber(item.oddsPercent),
+        drinkCost: normalizeDrinkCost(item.drinkCost ?? 1200),
         createdAt: item.createdAt
       }));
   } catch {
@@ -174,7 +199,28 @@ function normalizeState(input) {
       : []
   }));
 
-  return { groups };
+  return {
+    drinkCost: normalizeDrinkCost(input.drinkCost ?? 1200),
+    groups
+  };
+}
+
+function normalizeDrinkCost(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0) return 1200;
+  return Math.round(amount);
+}
+
+function normalizeParticipantCount(value) {
+  const count = Number(value);
+  if (!Number.isFinite(count) || count <= 0) return 0;
+  return Math.round(count);
+}
+
+function normalizeOptionalNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function commit(message) {
@@ -199,6 +245,7 @@ function clearAllHistory() {
 }
 
 function render() {
+  drinkCostInput.value = state.drinkCost;
   renderGroups();
   drawWheel(spinEntries || getActiveMembers());
   renderHistory();
@@ -467,12 +514,16 @@ function easeOutCubic(value) {
 }
 
 function recordWinner(winner) {
+  const participantCount = Array.isArray(spinEntries) ? spinEntries.length : getActiveMembers().length;
   const record = {
     id: createId(),
     memberId: winner.memberId || "",
     groupId: winner.groupId || "",
     name: winner.name,
     groupName: winner.groupName,
+    participantCount,
+    oddsPercent: participantCount > 0 ? 100 / participantCount : null,
+    drinkCost: state.drinkCost,
     createdAt: new Date().toISOString()
   };
   winnerHistory.unshift(record);
@@ -481,30 +532,35 @@ function recordWinner(winner) {
 }
 
 function renderHistory() {
-  const stats = buildStats(winnerHistory, getActiveMembers());
+  const activeMembers = getActiveMembers();
+  const stats = buildStats(winnerHistory, activeMembers, selectedStatsPeriod);
   statsList.replaceChildren();
   historyList.replaceChildren();
+  renderExpenseSummary(activeMembers);
+  renderPeriodTabs();
 
   if (stats.length === 0) {
     const empty = document.createElement("div");
     empty.className = "history-empty";
-    empty.textContent = "아직 당첨 기록이 없습니다";
+    empty.textContent = "참가자를 추가하면 주간, 월간 기록을 볼 수 있습니다";
     statsList.appendChild(empty);
   } else {
-    stats.slice(0, 8).forEach((item) => {
+    stats.slice(0, 12).forEach((item) => {
       const row = document.createElement("div");
       row.className = "stat-row";
-      const expectedLabel = item.expectedPercent === null ? "현재 제외" : `기대 ${formatPercent(item.expectedPercent)}`;
+      const expectedLabel = item.expectedPercent === null ? "현재 제외" : `현재 ${formatPercent(item.expectedPercent)}`;
+      const periodLabel = getPeriodLabel(selectedStatsPeriod);
+      const amountLabel = item.periodAmount > 0 ? ` · 예상 부담 ${formatMoney(item.periodAmount)}` : "";
       row.innerHTML = `
         <div>
           <div class="stat-topline">
             <span class="stat-name">${escapeHtml(item.name)} <span class="stat-count">(${escapeHtml(item.groupName)})</span></span>
-            <span class="stat-percent">${formatPercent(item.totalPercent)}</span>
+            <span class="stat-percent">${formatPercent(item.periodPercent)}</span>
           </div>
-          <div class="stat-meter" aria-label="전체 당첨 비율 ${formatPercent(item.totalPercent)}">
-            <span style="width: ${clampPercent(item.totalPercent)}%"></span>
+          <div class="stat-meter" aria-label="${periodLabel} 당첨 비율 ${formatPercent(item.periodPercent)}">
+            <span style="width: ${clampPercent(item.periodPercent)}%"></span>
           </div>
-          <div class="stat-detail">주 ${item.weekCount}회 ${formatPercent(item.weekPercent)} · 월 ${item.monthCount}회 ${formatPercent(item.monthPercent)} · 총 ${item.totalCount}회</div>
+          <div class="stat-detail">${periodLabel} ${item.periodCount}회 ${formatPercent(item.periodPercent)} · 주 ${item.weekCount}회 · 월 ${item.monthCount}회 · 총 ${item.totalCount}회${amountLabel}</div>
         </div>
       `;
       const actions = document.createElement("div");
@@ -512,23 +568,38 @@ function renderHistory() {
       const expected = document.createElement("span");
       expected.className = "stat-expected";
       expected.textContent = expectedLabel;
-      const deleteButton = document.createElement("button");
-      deleteButton.className = "stat-delete";
-      deleteButton.type = "button";
-      deleteButton.textContent = "개인 삭제";
-      deleteButton.addEventListener("click", () => deletePersonHistory(item));
-      actions.append(expected, deleteButton);
+      actions.appendChild(expected);
+      if (item.totalCount > 0) {
+        const deleteButton = document.createElement("button");
+        deleteButton.className = "stat-delete";
+        deleteButton.type = "button";
+        deleteButton.textContent = "개인 삭제";
+        deleteButton.addEventListener("click", () => deletePersonHistory(item));
+        actions.appendChild(deleteButton);
+      }
       row.appendChild(actions);
       statsList.appendChild(row);
     });
   }
 
+  if (winnerHistory.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "history-empty";
+    empty.textContent = "아직 돌림판 기록이 없습니다";
+    historyList.appendChild(empty);
+    return;
+  }
+
   winnerHistory.slice(0, 10).forEach((item) => {
     const row = document.createElement("li");
+    const participantLabel = item.participantCount > 0 ? `${item.participantCount}명 중 당첨` : "인원 미기록";
+    const oddsLabel = item.oddsPercent === null ? "확률 미기록" : `당시 확률 ${formatPercent(item.oddsPercent)}`;
+    const amount = getRecordEstimatedAmount(item);
+    const amountLabel = amount > 0 ? `예상 ${formatMoney(amount)}` : "금액 미기록";
     row.innerHTML = `
       <div>
         <div class="history-name">${escapeHtml(item.name)} (${escapeHtml(item.groupName)})</div>
-        <div class="history-time">${formatDateTime(item.createdAt)}</div>
+        <div class="history-time">${formatDateTime(item.createdAt)} · ${escapeHtml(participantLabel)} · ${escapeHtml(oddsLabel)} · ${escapeHtml(amountLabel)}</div>
       </div>
     `;
     const deleteButton = document.createElement("button");
@@ -543,20 +614,39 @@ function renderHistory() {
   });
 }
 
-function buildStats(records, activeEntries) {
+function buildStats(records, activeEntries, period) {
   const now = new Date();
   const weekStart = getWeekStart(now);
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const periodStart = getPeriodStart(period, now);
   const map = new Map();
   const activeOdds = new Map();
   const odds = WheelProbability.getEqualOdds(activeEntries);
   const weekTotal = records.filter((record) => new Date(record.createdAt) >= weekStart).length;
   const monthTotal = records.filter((record) => new Date(record.createdAt) >= monthStart).length;
+  const periodRecords = periodStart ? records.filter((record) => new Date(record.createdAt) >= periodStart) : records;
+  const periodTotal = periodRecords.length;
   const total = records.length;
 
   odds.forEach((entry) => {
-    activeOdds.set(`${entry.memberId}|${entry.groupName}`, entry.percent);
-    activeOdds.set(`${entry.name}|${entry.groupName}`, entry.percent);
+    const key = getEntryKey(entry);
+    activeOdds.set(key, entry.percent);
+    if (!map.has(key)) {
+      map.set(key, {
+        key,
+        memberId: entry.memberId || "",
+        groupId: entry.groupId || "",
+        name: entry.name,
+        groupName: entry.groupName,
+        active: true,
+        weekCount: 0,
+        monthCount: 0,
+        periodCount: 0,
+        totalCount: 0,
+        periodAmount: 0,
+        latestAt: null
+      });
+    }
   });
 
   records.forEach((record) => {
@@ -569,17 +659,25 @@ function buildStats(records, activeEntries) {
         groupId: record.groupId || "",
         name: record.name,
         groupName: record.groupName,
+        active: false,
         weekCount: 0,
         monthCount: 0,
+        periodCount: 0,
         totalCount: 0,
+        periodAmount: 0,
         latestAt: createdAt
       });
     }
 
     const item = map.get(key);
+    const recordAmount = getRecordEstimatedAmount(record);
     item.totalCount += 1;
     if (createdAt >= weekStart) item.weekCount += 1;
     if (createdAt >= monthStart) item.monthCount += 1;
+    if (!periodStart || createdAt >= periodStart) {
+      item.periodCount += 1;
+      item.periodAmount += recordAmount;
+    }
     if (createdAt > item.latestAt) item.latestAt = createdAt;
   });
 
@@ -587,15 +685,15 @@ function buildStats(records, activeEntries) {
     ...item,
     weekPercent: weekTotal > 0 ? (item.weekCount / weekTotal) * 100 : 0,
     monthPercent: monthTotal > 0 ? (item.monthCount / monthTotal) * 100 : 0,
+    periodPercent: periodTotal > 0 ? (item.periodCount / periodTotal) * 100 : 0,
     totalPercent: total > 0 ? (item.totalCount / total) * 100 : 0,
-    expectedPercent: activeOdds.has(`${item.memberId || item.name}|${item.groupName}`)
-      ? activeOdds.get(`${item.memberId || item.name}|${item.groupName}`)
-      : null
+    expectedPercent: activeOdds.has(item.key) ? activeOdds.get(item.key) : null
   })).sort((a, b) => {
+    if (b.periodCount !== a.periodCount) return b.periodCount - a.periodCount;
     if (b.monthCount !== a.monthCount) return b.monthCount - a.monthCount;
     if (b.weekCount !== a.weekCount) return b.weekCount - a.weekCount;
     if (b.totalCount !== a.totalCount) return b.totalCount - a.totalCount;
-    return b.latestAt - a.latestAt;
+    return (b.latestAt || 0) - (a.latestAt || 0);
   });
 }
 
@@ -624,6 +722,53 @@ function deleteHistoryItem(id) {
 
 function getRecordKey(record) {
   return `${record.memberId || record.name}|${record.groupName}`;
+}
+
+function getEntryKey(entry) {
+  return `${entry.memberId || entry.name}|${entry.groupName}`;
+}
+
+function getRecordEstimatedAmount(record) {
+  const participantCount = normalizeParticipantCount(record.participantCount);
+  if (participantCount === 0) return 0;
+  return participantCount * normalizeDrinkCost(record.drinkCost ?? state.drinkCost);
+}
+
+function renderExpenseSummary(activeEntries) {
+  const participantCount = activeEntries.length;
+  if (participantCount === 0) {
+    expenseSummary.textContent = "현재 참가자 0명";
+    return;
+  }
+
+  const totalAmount = participantCount * state.drinkCost;
+  const odds = 100 / participantCount;
+  expenseSummary.textContent = `현재 ${participantCount}명 · 1회 당첨 예상 ${formatMoney(totalAmount)} · 1인 확률 ${formatPercent(odds)}`;
+}
+
+function renderPeriodTabs() {
+  periodTabs.forEach((button) => {
+    const isSelected = button.dataset.period === selectedStatsPeriod;
+    button.classList.toggle("selected", isSelected);
+    button.setAttribute("aria-selected", String(isSelected));
+  });
+}
+
+function getPeriodStart(period, now = new Date()) {
+  if (period === "week") return getWeekStart(now);
+  if (period === "month") return new Date(now.getFullYear(), now.getMonth(), 1);
+  return null;
+}
+
+function getPeriodLabel(period) {
+  if (period === "week") return "이번 주";
+  if (period === "month") return "이번 달";
+  return "전체";
+}
+
+function formatMoney(value) {
+  if (!Number.isFinite(value)) return "0원";
+  return `${new Intl.NumberFormat("ko-KR").format(Math.round(value))}원`;
 }
 
 function formatPercent(value) {
@@ -664,9 +809,9 @@ function renderWinnerShare() {
 async function shareWinnerMessage() {
   if (!lastWinner) return;
 
-  const text = `${lastWinner.name}님 고맙습니다. ${formatDateTime(lastWinner.createdAt)} 복불복 돌림판 당첨 기록입니다.`;
+  const text = `${lastWinner.name}님 고맙습니다. ${formatDateTime(lastWinner.createdAt)} 돌림판 당첨 기록입니다.`;
   const shareData = {
-    title: "복불복 돌림판 당첨",
+    title: "돌림판 당첨",
     text,
     url: location.href.split("#")[0]
   };
@@ -690,6 +835,7 @@ async function shareWinnerMessage() {
 
 async function shareCurrentState() {
   const compactState = {
+    c: state.drinkCost,
     groups: state.groups.map((group) => ({
       n: group.name,
       a: group.active,
@@ -716,6 +862,7 @@ function readStateFromHash() {
     const compact = decodeState(hash);
     if (!compact || !Array.isArray(compact.groups)) return null;
     return {
+      drinkCost: normalizeDrinkCost(compact.c ?? 1200),
       groups: compact.groups.map((group) => ({
         id: createId(),
         name: String(group.n || "그룹").slice(0, 16),
