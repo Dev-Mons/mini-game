@@ -1,6 +1,8 @@
 const STORAGE_KEY = "team-wheel-state-v1";
 const HISTORY_KEY = "team-wheel-history-v1";
 const COLORS = ["#e34b43", "#2368b8", "#1c8f62", "#f0b429", "#8b5cf6", "#13a3a8", "#f97316", "#4b5563"];
+const SPIN_ACCELERATION_MS = 900;
+const MIN_SPIN_BEFORE_STOP_MS = 550;
 
 const canvas = document.querySelector("#wheelCanvas");
 const ctx = canvas.getContext("2d");
@@ -22,6 +24,9 @@ const historyList = document.querySelector("#historyList");
 const drinkCostInput = document.querySelector("#drinkCostInput");
 const expenseSummary = document.querySelector("#expenseSummary");
 const periodTabs = document.querySelectorAll(".period-tab");
+const calendarTitle = document.querySelector("#calendar-title");
+const calendarSummary = document.querySelector("#calendarSummary");
+const calendarGrid = document.querySelector("#calendarGrid");
 const toast = document.querySelector("#toast");
 
 let state = loadState();
@@ -31,6 +36,9 @@ let spinState = "idle";
 let spinAnimationId = 0;
 let spinEntries = null;
 let spinVelocity = 0;
+let currentSpinVelocity = 0;
+let spinStartTime = 0;
+let pendingStopRequest = false;
 let lastFrameTime = 0;
 let stopAnimation = null;
 let toastTimer = 0;
@@ -236,12 +244,16 @@ function commitHistory() {
 
 function clearAllHistory() {
   if (!confirm("당첨 기록만 삭제할까요? 팀과 이름은 유지됩니다.")) return;
+  const deletedRecords = cloneValue(winnerHistory);
+  const previousLastWinner = lastWinner ? cloneValue(lastWinner) : null;
   winnerHistory = [];
   lastWinner = null;
   localStorage.removeItem(HISTORY_KEY);
   renderHistory();
   renderWinnerShare();
-  showToast("당첨 기록을 초기화했습니다");
+  showUndoToast("당첨 기록을 초기화했습니다", () => {
+    restoreHistoryRecords(deletedRecords, previousLastWinner);
+  });
 }
 
 function render() {
@@ -282,8 +294,15 @@ function renderGroups() {
     });
 
     deleteGroup.addEventListener("click", () => {
+      const deletedGroup = cloneValue(group);
+      const groupIndex = state.groups.findIndex((item) => item.id === group.id);
       state.groups = state.groups.filter((item) => item.id !== group.id);
       commit();
+      showUndoToast(`${group.name} 그룹을 삭제했습니다`, () => {
+        if (state.groups.some((item) => item.id === deletedGroup.id)) return;
+        state.groups.splice(Math.max(0, groupIndex), 0, deletedGroup);
+        commit("그룹 삭제를 되돌렸습니다");
+      });
     });
 
     addMemberForm.addEventListener("submit", (event) => {
@@ -327,8 +346,22 @@ function createMemberRow(group, member) {
   });
 
   deleteMember.addEventListener("click", () => {
+    const deletedMember = cloneValue(member);
+    const parentGroup = cloneValue(group);
+    const memberIndex = group.members.findIndex((item) => item.id === member.id);
     group.members = group.members.filter((item) => item.id !== member.id);
     commit();
+    showUndoToast(`${member.name} 이름을 삭제했습니다`, () => {
+      let targetGroup = state.groups.find((item) => item.id === parentGroup.id);
+      if (!targetGroup) {
+        targetGroup = parentGroup;
+        targetGroup.members = [];
+        state.groups.push(targetGroup);
+      }
+      if (targetGroup.members.some((item) => item.id === deletedMember.id)) return;
+      targetGroup.members.splice(Math.max(0, memberIndex), 0, deletedMember);
+      commit("이름 삭제를 되돌렸습니다");
+    });
   });
 
   return fragment;
@@ -421,7 +454,10 @@ function startSpin() {
   spinEntries = entries;
   spinState = "spinning";
   spinVelocity = 640 + Math.random() * 220;
-  lastFrameTime = performance.now();
+  currentSpinVelocity = 0;
+  pendingStopRequest = false;
+  spinStartTime = performance.now();
+  lastFrameTime = spinStartTime;
   lastWinner = null;
   resultName.textContent = "돌아가는 중";
   renderWinnerShare();
@@ -433,14 +469,29 @@ function animateSpin(now) {
   if (spinState !== "spinning") return;
 
   const deltaSeconds = Math.min(0.05, (now - lastFrameTime) / 1000);
+  const elapsed = now - spinStartTime;
+  const accelerationProgress = Math.min(1, elapsed / SPIN_ACCELERATION_MS);
+  currentSpinVelocity = spinVelocity * easeInOutCubic(accelerationProgress);
   lastFrameTime = now;
-  rotation += spinVelocity * deltaSeconds;
+  rotation += currentSpinVelocity * deltaSeconds;
   setWheelRotation(rotation);
+
+  if (pendingStopRequest && elapsed >= MIN_SPIN_BEFORE_STOP_MS) {
+    stopSpin();
+    return;
+  }
+
   spinAnimationId = requestAnimationFrame(animateSpin);
 }
 
 function stopSpin() {
   if (spinState !== "spinning" || !spinEntries || spinEntries.length === 0) return;
+
+  if (performance.now() - spinStartTime < MIN_SPIN_BEFORE_STOP_MS) {
+    pendingStopRequest = true;
+    spinButton.textContent = "정지 예약";
+    return;
+  }
 
   cancelAnimationFrame(spinAnimationId);
   spinState = "stopping";
@@ -452,12 +503,15 @@ function stopSpin() {
   const winnerCenter = winnerIndex * sliceDegrees + sliceDegrees / 2;
   const currentNormalized = WheelProbability.normalizeDegrees(rotation);
   const desiredPointerAngle = 360 - winnerCenter;
-  const extraTurns = 2 + Math.floor(Math.random() * 3);
-  const delta = extraTurns * 360 + WheelProbability.normalizeDegrees(desiredPointerAngle - currentNormalized);
+  const delta = getStopDelta(
+    WheelProbability.normalizeDegrees(desiredPointerAngle - currentNormalized),
+    Math.max(120, currentSpinVelocity)
+  );
+  const duration = getStopDuration(delta, Math.max(120, currentSpinVelocity));
 
   stopAnimation = {
     startTime: performance.now(),
-    duration: 2600 + Math.random() * 800,
+    duration,
     from: rotation,
     to: rotation + delta,
     winnerIndex
@@ -489,6 +543,8 @@ function finishSpin(winner) {
   spinState = "idle";
   stopAnimation = null;
   spinEntries = null;
+  currentSpinVelocity = 0;
+  pendingStopRequest = false;
   resultName.textContent = `${winner.name} (${winner.groupName})`;
   lastWinner = recordWinner(winner);
   drawWheel(getActiveMembers());
@@ -501,6 +557,8 @@ function stopImmediate() {
   spinState = "idle";
   stopAnimation = null;
   spinEntries = null;
+  currentSpinVelocity = 0;
+  pendingStopRequest = false;
   spinButton.disabled = false;
   spinButton.textContent = "돌리기";
 }
@@ -511,6 +569,26 @@ function setWheelRotation(degrees) {
 
 function easeOutCubic(value) {
   return 1 - Math.pow(1 - value, 3);
+}
+
+function easeInOutCubic(value) {
+  return value < 0.5 ? 4 * value * value * value : 1 - Math.pow(-2 * value + 2, 3) / 2;
+}
+
+function getStopDelta(baseDelta, velocity) {
+  const minimumDelta = velocity < 360 ? 180 : 420;
+  let delta = baseDelta < 12 ? baseDelta + 360 : baseDelta;
+
+  while (delta < minimumDelta) {
+    delta += 360;
+  }
+
+  return delta;
+}
+
+function getStopDuration(delta, velocity) {
+  const naturalDuration = (delta * 3 * 1000) / velocity;
+  return Math.max(1600, Math.min(6500, naturalDuration));
 }
 
 function recordWinner(winner) {
@@ -538,6 +616,7 @@ function renderHistory() {
   historyList.replaceChildren();
   renderExpenseSummary(activeMembers);
   renderPeriodTabs();
+  renderCalendar();
 
   if (stats.length === 0) {
     const empty = document.createElement("div");
@@ -548,27 +627,26 @@ function renderHistory() {
     stats.slice(0, 12).forEach((item) => {
       const row = document.createElement("div");
       row.className = "stat-row";
-      const expectedLabel = item.expectedPercent === null ? "현재 제외" : `현재 ${formatPercent(item.expectedPercent)}`;
       const periodLabel = getPeriodLabel(selectedStatsPeriod);
-      const amountLabel = item.periodAmount > 0 ? ` · 예상 부담 ${formatMoney(item.periodAmount)}` : "";
+      const amountLabel = item.periodAmount > 0 ? formatMoney(item.periodAmount) : "0원";
       row.innerHTML = `
         <div>
           <div class="stat-topline">
             <span class="stat-name">${escapeHtml(item.name)} <span class="stat-count">(${escapeHtml(item.groupName)})</span></span>
-            <span class="stat-percent">${formatPercent(item.periodPercent)}</span>
+            <span class="stat-percent">${item.periodCount}회</span>
           </div>
           <div class="stat-meter" aria-label="${periodLabel} 당첨 비율 ${formatPercent(item.periodPercent)}">
             <span style="width: ${clampPercent(item.periodPercent)}%"></span>
           </div>
-          <div class="stat-detail">${periodLabel} ${item.periodCount}회 ${formatPercent(item.periodPercent)} · 주 ${item.weekCount}회 · 월 ${item.monthCount}회 · 총 ${item.totalCount}회${amountLabel}</div>
+          <div class="stat-summary">
+            <span>${periodLabel}</span>
+            <span>예상 ${amountLabel}</span>
+            <span>비중 ${formatPercent(item.periodPercent)}</span>
+          </div>
         </div>
       `;
       const actions = document.createElement("div");
       actions.className = "stat-actions";
-      const expected = document.createElement("span");
-      expected.className = "stat-expected";
-      expected.textContent = expectedLabel;
-      actions.appendChild(expected);
       if (item.totalCount > 0) {
         const deleteButton = document.createElement("button");
         deleteButton.className = "stat-delete";
@@ -577,7 +655,9 @@ function renderHistory() {
         deleteButton.addEventListener("click", () => deletePersonHistory(item));
         actions.appendChild(deleteButton);
       }
-      row.appendChild(actions);
+      if (actions.childNodes.length > 0) {
+        row.appendChild(actions);
+      }
       statsList.appendChild(row);
     });
   }
@@ -592,14 +672,11 @@ function renderHistory() {
 
   winnerHistory.slice(0, 10).forEach((item) => {
     const row = document.createElement("li");
-    const participantLabel = item.participantCount > 0 ? `${item.participantCount}명 중 당첨` : "인원 미기록";
     const oddsLabel = item.oddsPercent === null ? "확률 미기록" : `당시 확률 ${formatPercent(item.oddsPercent)}`;
-    const amount = getRecordEstimatedAmount(item);
-    const amountLabel = amount > 0 ? `예상 ${formatMoney(amount)}` : "금액 미기록";
     row.innerHTML = `
       <div>
-        <div class="history-name">${escapeHtml(item.name)} (${escapeHtml(item.groupName)})</div>
-        <div class="history-time">${formatDateTime(item.createdAt)} · ${escapeHtml(participantLabel)} · ${escapeHtml(oddsLabel)} · ${escapeHtml(amountLabel)}</div>
+        <div class="history-name">${escapeHtml(getRecordSummary(item))}</div>
+        <div class="history-time">${formatDateTime(item.createdAt)} · ${escapeHtml(item.groupName)} · ${escapeHtml(oddsLabel)}</div>
       </div>
     `;
     const deleteButton = document.createElement("button");
@@ -643,6 +720,7 @@ function buildStats(records, activeEntries, period) {
         monthCount: 0,
         periodCount: 0,
         totalCount: 0,
+        monthAmount: 0,
         periodAmount: 0,
         latestAt: null
       });
@@ -664,6 +742,7 @@ function buildStats(records, activeEntries, period) {
         monthCount: 0,
         periodCount: 0,
         totalCount: 0,
+        monthAmount: 0,
         periodAmount: 0,
         latestAt: createdAt
       });
@@ -673,7 +752,10 @@ function buildStats(records, activeEntries, period) {
     const recordAmount = getRecordEstimatedAmount(record);
     item.totalCount += 1;
     if (createdAt >= weekStart) item.weekCount += 1;
-    if (createdAt >= monthStart) item.monthCount += 1;
+    if (createdAt >= monthStart) {
+      item.monthCount += 1;
+      item.monthAmount += recordAmount;
+    }
     if (!periodStart || createdAt >= periodStart) {
       item.periodCount += 1;
       item.periodAmount += recordAmount;
@@ -699,25 +781,48 @@ function buildStats(records, activeEntries, period) {
 
 function deletePersonHistory(item) {
   if (!confirm(`${item.name}님의 당첨 기록을 모두 삭제할까요?`)) return;
+  const deletedRecords = winnerHistory.filter((record) => getRecordKey(record) === item.key).map(cloneValue);
+  const previousLastWinner = lastWinner ? cloneValue(lastWinner) : null;
   winnerHistory = winnerHistory.filter((record) => getRecordKey(record) !== item.key);
   if (lastWinner && getRecordKey(lastWinner) === item.key) {
     lastWinner = null;
   }
   commitHistory();
   renderWinnerShare();
-  showToast("개인 기록을 삭제했습니다");
+  showUndoToast("개인 기록을 삭제했습니다", () => {
+    restoreHistoryRecords(deletedRecords, previousLastWinner);
+  });
 }
 
 function deleteHistoryItem(id) {
   if (!confirm("이 당첨 기록을 삭제할까요?")) return;
   const deleted = winnerHistory.find((record) => record.id === id);
+  if (!deleted) return;
   winnerHistory = winnerHistory.filter((record) => record.id !== id);
   if (deleted && lastWinner && lastWinner.id === deleted.id) {
     lastWinner = null;
   }
   commitHistory();
   renderWinnerShare();
-  showToast("기록을 삭제했습니다");
+  showUndoToast("기록을 삭제했습니다", () => {
+    restoreHistoryRecords([cloneValue(deleted)], deleted);
+  });
+}
+
+function restoreHistoryRecords(records, restoredLastWinner) {
+  const deletedRecords = Array.isArray(records) ? records.filter(Boolean).map(cloneValue) : [];
+  if (deletedRecords.length === 0) return;
+  const existingIds = new Set(winnerHistory.map((record) => record.id));
+  winnerHistory = [...winnerHistory, ...deletedRecords.filter((record) => !existingIds.has(record.id))]
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .slice(0, 200);
+  if (restoredLastWinner) {
+    lastWinner = cloneValue(restoredLastWinner);
+  }
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(winnerHistory.slice(0, 200)));
+  renderHistory();
+  renderWinnerShare();
+  showToast("삭제를 되돌렸습니다");
 }
 
 function getRecordKey(record) {
@@ -734,16 +839,33 @@ function getRecordEstimatedAmount(record) {
   return participantCount * normalizeDrinkCost(record.drinkCost ?? state.drinkCost);
 }
 
+function getRecordSummary(record) {
+  const participantLabel = record.participantCount > 0 ? `${record.participantCount}명 돌림판` : "인원 미기록 돌림판";
+  const amount = getRecordEstimatedAmount(record);
+  if (amount <= 0) {
+    return `${record.name}님이 ${participantLabel}에서 걸렸고 예상 금액은 계산할 수 없어요`;
+  }
+  return `${record.name}님이 ${participantLabel}에서 걸려 예상 ${formatMoney(amount)} 쓴 것 같아요`;
+}
+
+function formatDateKey(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function renderExpenseSummary(activeEntries) {
   const participantCount = activeEntries.length;
   if (participantCount === 0) {
-    expenseSummary.textContent = "현재 참가자 0명";
+    expenseSummary.textContent = "기록 금액 계산 기준";
     return;
   }
 
-  const totalAmount = participantCount * state.drinkCost;
   const odds = 100 / participantCount;
-  expenseSummary.textContent = `현재 ${participantCount}명 · 1회 당첨 예상 ${formatMoney(totalAmount)} · 1인 확률 ${formatPercent(odds)}`;
+  expenseSummary.textContent = `현재 ${participantCount}명 · 걸릴 확률 ${formatPercent(odds)} · 기록에 예상 비용 반영`;
 }
 
 function renderPeriodTabs() {
@@ -752,6 +874,80 @@ function renderPeriodTabs() {
     button.classList.toggle("selected", isSelected);
     button.setAttribute("aria-selected", String(isSelected));
   });
+}
+
+function renderCalendar() {
+  calendarGrid.replaceChildren();
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const firstDay = new Date(year, month, 1);
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const leadingBlankCount = (firstDay.getDay() + 6) % 7;
+  const cellCount = Math.ceil((leadingBlankCount + daysInMonth) / 7) * 7;
+  const monthRecords = winnerHistory.filter((record) => {
+    const createdAt = new Date(record.createdAt);
+    return createdAt.getFullYear() === year && createdAt.getMonth() === month;
+  });
+  const recordsByDay = new Map();
+  const monthTotalAmount = monthRecords.reduce((sum, record) => sum + getRecordEstimatedAmount(record), 0);
+
+  monthRecords.forEach((record) => {
+    const key = formatDateKey(record.createdAt);
+    const list = recordsByDay.get(key) || [];
+    list.push(record);
+    recordsByDay.set(key, list);
+  });
+
+  calendarTitle.textContent = `${year}년 ${month + 1}월 달력`;
+  calendarSummary.textContent = `${monthRecords.length}건 · 예상 ${formatMoney(monthTotalAmount)}`;
+
+  for (let index = 0; index < cellCount; index += 1) {
+    const day = index - leadingBlankCount + 1;
+    const cell = document.createElement("div");
+    cell.className = "calendar-day";
+
+    if (day < 1 || day > daysInMonth) {
+      cell.classList.add("outside");
+      calendarGrid.appendChild(cell);
+      continue;
+    }
+
+    const date = new Date(year, month, day);
+    const dayKey = formatDateKey(date);
+    const dayRecords = recordsByDay.get(dayKey) || [];
+    const dayAmount = dayRecords.reduce((sum, record) => sum + getRecordEstimatedAmount(record), 0);
+    cell.classList.toggle("today", dayKey === formatDateKey(now));
+    cell.classList.toggle("has-records", dayRecords.length > 0);
+
+    const dayNumber = document.createElement("div");
+    dayNumber.className = "calendar-day-number";
+    dayNumber.textContent = String(day);
+    cell.appendChild(dayNumber);
+
+    if (dayRecords.length > 0) {
+      const names = document.createElement("div");
+      names.className = "calendar-names";
+      dayRecords.slice(0, 3).forEach((record) => {
+        const badge = document.createElement("span");
+        badge.textContent = record.name;
+        names.appendChild(badge);
+      });
+      if (dayRecords.length > 3) {
+        const more = document.createElement("span");
+        more.textContent = `+${dayRecords.length - 3}`;
+        names.appendChild(more);
+      }
+
+      const amount = document.createElement("div");
+      amount.className = "calendar-amount";
+      amount.textContent = formatMoney(dayAmount);
+      cell.title = dayRecords.map((record) => getRecordSummary(record)).join("\n");
+      cell.append(names, amount);
+    }
+
+    calendarGrid.appendChild(cell);
+  }
 }
 
 function getPeriodStart(period, now = new Date()) {
@@ -908,11 +1104,39 @@ function escapeHtml(value) {
     .replace(/'/g, "&#039;");
 }
 
-function showToast(message) {
+function cloneValue(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function showUndoToast(message, undoFn) {
+  showToast(message, {
+    label: "되돌리기",
+    duration: 7000,
+    action: undoFn
+  });
+}
+
+function showToast(message, options = {}) {
   clearTimeout(toastTimer);
-  toast.textContent = message;
+  toast.replaceChildren();
+  const text = document.createElement("span");
+  text.textContent = message;
+  toast.appendChild(text);
+
+  if (typeof options.action === "function") {
+    const actionButton = document.createElement("button");
+    actionButton.type = "button";
+    actionButton.textContent = options.label || "실행";
+    actionButton.addEventListener("click", () => {
+      clearTimeout(toastTimer);
+      toast.classList.remove("show");
+      options.action();
+    }, { once: true });
+    toast.appendChild(actionButton);
+  }
+
   toast.classList.add("show");
   toastTimer = setTimeout(() => {
     toast.classList.remove("show");
-  }, 1800);
+  }, options.duration || 1800);
 }
