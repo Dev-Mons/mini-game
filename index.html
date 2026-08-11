@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>팀 돌림판</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=20260811-4" />
   </head>
   <body>
     <main class="app-shell">
@@ -30,6 +30,18 @@
           <strong id="resultName">참가자를 선택하세요</strong>
         </div>
         <button class="winner-share-button" id="shareWinnerButton" type="button" hidden>당첨자에게 메시지 공유</button>
+
+        <section class="manager-panel" aria-label="참가자 관리">
+          <form class="add-group-form" id="addGroupForm">
+            <label for="groupNameInput">그룹 추가</label>
+            <div class="inline-form">
+              <input id="groupNameInput" name="groupName" type="text" maxlength="16" placeholder="예: 기획팀" autocomplete="off" />
+              <button type="submit">추가</button>
+            </div>
+          </form>
+
+          <div class="group-list" id="groupList"></div>
+        </section>
 
         <div class="quick-actions">
           <button id="selectAllButton" type="button">전체 참가</button>
@@ -72,22 +84,27 @@
             </div>
             <div class="calendar-grid" id="calendarGrid"></div>
           </section>
-          <ol class="history-list" id="historyList"></ol>
         </section>
       </section>
+    </main>
 
-      <section class="manager-panel" aria-label="참가자 관리">
-        <form class="add-group-form" id="addGroupForm">
-          <label for="groupNameInput">그룹 추가</label>
-          <div class="inline-form">
-            <input id="groupNameInput" name="groupName" type="text" maxlength="16" placeholder="예: 기획팀" autocomplete="off" />
-            <button type="submit">추가</button>
+    <div class="celebration-layer" id="celebrationLayer" aria-hidden="true"></div>
+
+    <div class="participant-count-modal" id="participantCountModal" hidden>
+      <section class="participant-count-dialog" role="dialog" aria-modal="true" aria-labelledby="participantCountTitle" aria-describedby="participantCountDescription">
+        <form id="participantCountForm">
+          <h2 id="participantCountTitle">인원수 수정</h2>
+          <p id="participantCountDescription"></p>
+          <label for="participantCountInput">적용할 인원수</label>
+          <input id="participantCountInput" type="number" min="1" max="999" step="1" inputmode="numeric" required />
+          <p class="participant-count-error" id="participantCountError" aria-live="polite"></p>
+          <div class="participant-count-actions">
+            <button id="participantCountCancel" type="button">취소</button>
+            <button type="submit">저장</button>
           </div>
         </form>
-
-        <div class="group-list" id="groupList"></div>
       </section>
-    </main>
+    </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
@@ -119,6 +136,6 @@
     </template>
 
     <script src="./probability.js"></script>
-    <script src="./game.js"></script>
+    <script src="./game.js?v=20260811-4"></script>
   </body>
 </html>

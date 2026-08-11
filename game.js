@@ -7,6 +7,7 @@ const MIN_SPIN_BEFORE_STOP_MS = 550;
 const canvas = document.querySelector("#wheelCanvas");
 const ctx = canvas.getContext("2d");
 const spinButton = document.querySelector("#spinButton");
+const resultBox = document.querySelector("#resultBox");
 const resultName = document.querySelector("#resultName");
 const groupList = document.querySelector("#groupList");
 const addGroupForm = document.querySelector("#addGroupForm");
@@ -20,13 +21,20 @@ const clearAllButton = document.querySelector("#clearAllButton");
 const resetButton = document.querySelector("#resetButton");
 const clearHistoryButton = document.querySelector("#clearHistoryButton");
 const statsList = document.querySelector("#statsList");
-const historyList = document.querySelector("#historyList");
 const drinkCostInput = document.querySelector("#drinkCostInput");
 const expenseSummary = document.querySelector("#expenseSummary");
 const periodTabs = document.querySelectorAll(".period-tab");
 const calendarTitle = document.querySelector("#calendar-title");
 const calendarSummary = document.querySelector("#calendarSummary");
 const calendarGrid = document.querySelector("#calendarGrid");
+const celebrationLayer = document.querySelector("#celebrationLayer");
+const participantCountModal = document.querySelector("#participantCountModal");
+const participantCountForm = document.querySelector("#participantCountForm");
+const participantCountTitle = document.querySelector("#participantCountTitle");
+const participantCountDescription = document.querySelector("#participantCountDescription");
+const participantCountInput = document.querySelector("#participantCountInput");
+const participantCountError = document.querySelector("#participantCountError");
+const participantCountCancel = document.querySelector("#participantCountCancel");
 const toast = document.querySelector("#toast");
 
 let state = loadState();
@@ -44,6 +52,9 @@ let stopAnimation = null;
 let toastTimer = 0;
 let lastWinner = null;
 let selectedStatsPeriod = "month";
+let participantCountEditContext = null;
+let celebrationTimer = 0;
+let winAudioContext = null;
 
 render();
 
@@ -65,6 +76,14 @@ addGroupForm.addEventListener("submit", (event) => {
 spinButton.addEventListener("click", handleSpinButton);
 shareButton.addEventListener("click", shareCurrentState);
 shareWinnerButton.addEventListener("click", shareWinnerMessage);
+participantCountForm.addEventListener("submit", saveParticipantCountEdit);
+participantCountCancel.addEventListener("click", closeParticipantCountEdit);
+participantCountModal.addEventListener("click", (event) => {
+  if (event.target === participantCountModal) closeParticipantCountEdit();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !participantCountModal.hidden) closeParticipantCountEdit();
+});
 
 selectAllButton.addEventListener("click", () => {
   state.groups.forEach((group) => {
@@ -451,6 +470,8 @@ function startSpin() {
   const entries = getActiveMembers();
   if (entries.length === 0) return;
 
+  clearCelebration();
+  primeWinSound();
   spinEntries = entries;
   spinState = "spinning";
   spinVelocity = 640 + Math.random() * 220;
@@ -545,11 +566,114 @@ function finishSpin(winner) {
   spinEntries = null;
   currentSpinVelocity = 0;
   pendingStopRequest = false;
-  resultName.textContent = `${winner.name} (${winner.groupName})`;
+  resultName.textContent = `${winner.name} (${winner.groupName}) 당첨!`;
   lastWinner = recordWinner(winner);
   drawWheel(getActiveMembers());
   commitHistory();
   renderWinnerShare();
+  celebrateWinner();
+}
+
+function celebrateWinner() {
+  clearTimeout(celebrationTimer);
+  celebrationLayer.replaceChildren();
+  resultBox.classList.remove("winner-result");
+  void resultBox.offsetWidth;
+  resultBox.classList.add("winner-result");
+  playWinSound();
+
+  if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const resultRect = resultBox.getBoundingClientRect();
+    const originX = resultRect.left + resultRect.width / 2;
+    const originY = resultRect.top + resultRect.height / 2;
+    const colors = ["#e34b43", "#2368b8", "#1c8f62", "#f0b429", "#8b5cf6", "#f97316", "#ffffff"];
+    const fragment = document.createDocumentFragment();
+
+    for (let index = 0; index < 96; index += 1) {
+      const particle = document.createElement("i");
+      const angle = Math.random() * Math.PI * 2;
+      const distance = 180 + Math.random() * 460;
+      const width = 5 + Math.random() * 8;
+      const height = index % 5 === 0 ? width : width + 5 + Math.random() * 7;
+      particle.className = index % 5 === 0 ? "celebration-particle round" : "celebration-particle";
+      particle.style.left = `${originX}px`;
+      particle.style.top = `${originY}px`;
+      particle.style.width = `${width}px`;
+      particle.style.height = `${height}px`;
+      particle.style.background = colors[index % colors.length];
+      particle.style.setProperty("--burst-x", `${Math.cos(angle) * distance}px`);
+      particle.style.setProperty("--burst-y", `${Math.sin(angle) * distance + 240}px`);
+      particle.style.setProperty("--burst-rotate", `${360 + Math.random() * 1080}deg`);
+      particle.style.setProperty("--burst-delay", `${Math.random() * 180}ms`);
+      particle.style.setProperty("--burst-duration", `${1300 + Math.random() * 900}ms`);
+      fragment.appendChild(particle);
+    }
+
+    const winnerBadge = document.createElement("div");
+    winnerBadge.className = "winner-burst-badge";
+    winnerBadge.textContent = "🎉 당첨! 🎉";
+    winnerBadge.style.left = `${originX}px`;
+    winnerBadge.style.top = `${Math.max(90, originY - 36)}px`;
+    fragment.appendChild(winnerBadge);
+    celebrationLayer.appendChild(fragment);
+    celebrationLayer.classList.add("active");
+  }
+
+  celebrationTimer = window.setTimeout(() => {
+    celebrationLayer.classList.remove("active");
+    celebrationLayer.replaceChildren();
+  }, 2600);
+}
+
+function clearCelebration() {
+  clearTimeout(celebrationTimer);
+  celebrationLayer.classList.remove("active");
+  celebrationLayer.replaceChildren();
+  resultBox.classList.remove("winner-result");
+}
+
+function primeWinSound() {
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return;
+
+  try {
+    if (!winAudioContext) winAudioContext = new AudioContextClass();
+    if (winAudioContext.state === "suspended") winAudioContext.resume();
+  } catch {
+    winAudioContext = null;
+  }
+}
+
+function playWinSound() {
+  if (!winAudioContext) return;
+
+  try {
+    const startAt = winAudioContext.currentTime + 0.03;
+    const notes = [
+      [523.25, 0],
+      [659.25, 0.1],
+      [783.99, 0.2],
+      [1046.5, 0.36]
+    ];
+
+    notes.forEach(([frequency, delay], index) => {
+      const oscillator = winAudioContext.createOscillator();
+      const gain = winAudioContext.createGain();
+      const noteStart = startAt + delay;
+      const duration = index === notes.length - 1 ? 0.48 : 0.22;
+      oscillator.type = index === notes.length - 1 ? "sine" : "triangle";
+      oscillator.frequency.setValueAtTime(frequency, noteStart);
+      gain.gain.setValueAtTime(0.0001, noteStart);
+      gain.gain.exponentialRampToValueAtTime(0.18, noteStart + 0.025);
+      gain.gain.exponentialRampToValueAtTime(0.0001, noteStart + duration);
+      oscillator.connect(gain);
+      gain.connect(winAudioContext.destination);
+      oscillator.start(noteStart);
+      oscillator.stop(noteStart + duration + 0.03);
+    });
+  } catch {
+    // 사운드가 제한된 웹뷰에서도 시각 효과는 계속 동작합니다.
+  }
 }
 
 function stopImmediate() {
@@ -613,7 +737,6 @@ function renderHistory() {
   const activeMembers = getActiveMembers();
   const stats = buildStats(winnerHistory, activeMembers, selectedStatsPeriod);
   statsList.replaceChildren();
-  historyList.replaceChildren();
   renderExpenseSummary(activeMembers);
   renderPeriodTabs();
   renderCalendar();
@@ -640,11 +763,15 @@ function renderHistory() {
           </div>
           <div class="stat-summary">
             <span>${periodLabel}</span>
-            <span>예상 ${amountLabel}</span>
+            <button class="stat-amount-edit" type="button">예상 ${amountLabel}</button>
             <span>비중 ${formatPercent(item.periodPercent)}</span>
           </div>
         </div>
       `;
+      const amountButton = row.querySelector(".stat-amount-edit");
+      amountButton.title = "예상 금액에 반영할 인원수 수정";
+      amountButton.setAttribute("aria-label", `${item.name} ${periodLabel} 예상 금액 인원수 수정`);
+      amountButton.addEventListener("click", () => editParticipantCount(item));
       const actions = document.createElement("div");
       actions.className = "stat-actions";
       if (item.totalCount > 0) {
@@ -662,33 +789,6 @@ function renderHistory() {
     });
   }
 
-  if (winnerHistory.length === 0) {
-    const empty = document.createElement("li");
-    empty.className = "history-empty";
-    empty.textContent = "아직 돌림판 기록이 없습니다";
-    historyList.appendChild(empty);
-    return;
-  }
-
-  winnerHistory.slice(0, 10).forEach((item) => {
-    const row = document.createElement("li");
-    const oddsLabel = item.oddsPercent === null ? "확률 미기록" : `당시 확률 ${formatPercent(item.oddsPercent)}`;
-    row.innerHTML = `
-      <div>
-        <div class="history-name">${escapeHtml(getRecordSummary(item))}</div>
-        <div class="history-time">${formatDateTime(item.createdAt)} · ${escapeHtml(item.groupName)} · ${escapeHtml(oddsLabel)}</div>
-      </div>
-    `;
-    const deleteButton = document.createElement("button");
-    deleteButton.className = "history-delete";
-    deleteButton.type = "button";
-    deleteButton.title = "이 기록 삭제";
-    deleteButton.setAttribute("aria-label", "이 기록 삭제");
-    deleteButton.textContent = "×";
-    deleteButton.addEventListener("click", () => deleteHistoryItem(item.id));
-    row.appendChild(deleteButton);
-    historyList.appendChild(row);
-  });
 }
 
 function buildStats(records, activeEntries, period) {
@@ -794,19 +894,79 @@ function deletePersonHistory(item) {
   });
 }
 
-function deleteHistoryItem(id) {
-  if (!confirm("이 당첨 기록을 삭제할까요?")) return;
-  const deleted = winnerHistory.find((record) => record.id === id);
-  if (!deleted) return;
-  winnerHistory = winnerHistory.filter((record) => record.id !== id);
-  if (deleted && lastWinner && lastWinner.id === deleted.id) {
-    lastWinner = null;
+function editParticipantCount(item) {
+  const periodStart = getPeriodStart(selectedStatsPeriod);
+  const matchingRecords = winnerHistory.filter((record) => {
+    if (getRecordKey(record) !== item.key) return false;
+    return !periodStart || new Date(record.createdAt) >= periodStart;
+  });
+  const periodLabel = getPeriodLabel(selectedStatsPeriod);
+
+  if (matchingRecords.length === 0) {
+    showToast(`${periodLabel}에 수정할 당첨 기록이 없습니다`);
+    return;
   }
+
+  const savedCounts = [...new Set(matchingRecords.map((record) => normalizeParticipantCount(record.participantCount)).filter(Boolean))];
+  const suggestedCount = savedCounts.length === 1 ? savedCounts[0] : getActiveMembers().length || 1;
+  participantCountEditContext = {
+    itemName: item.name,
+    periodLabel,
+    recordIds: matchingRecords.map((record) => record.id)
+  };
+  participantCountTitle.textContent = `${item.name} 인원수 수정`;
+  participantCountDescription.textContent = `${periodLabel} 당첨 기록 ${matchingRecords.length}건의 예상 금액에 같은 인원수를 적용합니다.`;
+  participantCountInput.value = String(suggestedCount);
+  participantCountError.textContent = "";
+  participantCountModal.hidden = false;
+  requestAnimationFrame(() => {
+    participantCountInput.focus();
+    participantCountInput.select();
+  });
+}
+
+function saveParticipantCountEdit(event) {
+  event.preventDefault();
+  if (!participantCountEditContext) return;
+
+  const participantCount = Number(participantCountInput.value.trim());
+  if (!Number.isInteger(participantCount) || participantCount < 1 || participantCount > 999) {
+    participantCountError.textContent = "1~999 사이의 정수를 입력해주세요";
+    participantCountInput.focus();
+    return;
+  }
+
+  const editContext = participantCountEditContext;
+  const previousHistory = cloneValue(winnerHistory);
+  const previousLastWinner = lastWinner ? cloneValue(lastWinner) : null;
+  const matchingIds = new Set(editContext.recordIds);
+  winnerHistory.forEach((record) => {
+    if (!matchingIds.has(record.id)) return;
+    record.participantCount = participantCount;
+    record.oddsPercent = 100 / participantCount;
+  });
+  if (lastWinner && matchingIds.has(lastWinner.id)) {
+    lastWinner.participantCount = participantCount;
+    lastWinner.oddsPercent = 100 / participantCount;
+  }
+
+  closeParticipantCountEdit();
   commitHistory();
   renderWinnerShare();
-  showUndoToast("기록을 삭제했습니다", () => {
-    restoreHistoryRecords([cloneValue(deleted)], deleted);
+  showUndoToast(`${editContext.periodLabel} 인원수를 ${participantCount}명으로 수정했습니다`, () => {
+    winnerHistory = previousHistory;
+    lastWinner = previousLastWinner;
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(winnerHistory.slice(0, 200)));
+    renderHistory();
+    renderWinnerShare();
+    showToast("인원수 수정을 되돌렸습니다");
   });
+}
+
+function closeParticipantCountEdit() {
+  participantCountModal.hidden = true;
+  participantCountEditContext = null;
+  participantCountError.textContent = "";
 }
 
 function restoreHistoryRecords(records, restoredLastWinner) {
