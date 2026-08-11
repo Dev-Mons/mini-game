@@ -763,15 +763,11 @@ function renderHistory() {
           </div>
           <div class="stat-summary">
             <span>${periodLabel}</span>
-            <button class="stat-amount-edit" type="button">예상 ${amountLabel}</button>
+            <span>예상 ${amountLabel}</span>
             <span>비중 ${formatPercent(item.periodPercent)}</span>
           </div>
         </div>
       `;
-      const amountButton = row.querySelector(".stat-amount-edit");
-      amountButton.title = "예상 금액에 반영할 인원수 수정";
-      amountButton.setAttribute("aria-label", `${item.name} ${periodLabel} 예상 금액 인원수 수정`);
-      amountButton.addEventListener("click", () => editParticipantCount(item));
       const actions = document.createElement("div");
       actions.className = "stat-actions";
       if (item.totalCount > 0) {
@@ -894,28 +890,18 @@ function deletePersonHistory(item) {
   });
 }
 
-function editParticipantCount(item) {
-  const periodStart = getPeriodStart(selectedStatsPeriod);
-  const matchingRecords = winnerHistory.filter((record) => {
-    if (getRecordKey(record) !== item.key) return false;
-    return !periodStart || new Date(record.createdAt) >= periodStart;
-  });
-  const periodLabel = getPeriodLabel(selectedStatsPeriod);
+function editCalendarDayParticipantCount(records, date) {
+  if (!Array.isArray(records) || records.length === 0) return;
 
-  if (matchingRecords.length === 0) {
-    showToast(`${periodLabel}에 수정할 당첨 기록이 없습니다`);
-    return;
-  }
-
-  const savedCounts = [...new Set(matchingRecords.map((record) => normalizeParticipantCount(record.participantCount)).filter(Boolean))];
+  const dateLabel = `${date.getMonth() + 1}월 ${date.getDate()}일`;
+  const savedCounts = [...new Set(records.map((record) => normalizeParticipantCount(record.participantCount)).filter(Boolean))];
   const suggestedCount = savedCounts.length === 1 ? savedCounts[0] : getActiveMembers().length || 1;
   participantCountEditContext = {
-    itemName: item.name,
-    periodLabel,
-    recordIds: matchingRecords.map((record) => record.id)
+    scopeLabel: dateLabel,
+    recordIds: records.map((record) => record.id)
   };
-  participantCountTitle.textContent = `${item.name} 인원수 수정`;
-  participantCountDescription.textContent = `${periodLabel} 당첨 기록 ${matchingRecords.length}건의 예상 금액에 같은 인원수를 적용합니다.`;
+  participantCountTitle.textContent = `${dateLabel} 인원수 수정`;
+  participantCountDescription.textContent = `이날의 당첨 기록 ${records.length}건에 같은 인원수를 적용합니다.`;
   participantCountInput.value = String(suggestedCount);
   participantCountError.textContent = "";
   participantCountModal.hidden = false;
@@ -953,7 +939,7 @@ function saveParticipantCountEdit(event) {
   closeParticipantCountEdit();
   commitHistory();
   renderWinnerShare();
-  showUndoToast(`${editContext.periodLabel} 인원수를 ${participantCount}명으로 수정했습니다`, () => {
+  showUndoToast(`${editContext.scopeLabel} 인원수를 ${participantCount}명으로 수정했습니다`, () => {
     winnerHistory = previousHistory;
     lastWinner = previousLastWinner;
     localStorage.setItem(HISTORY_KEY, JSON.stringify(winnerHistory.slice(0, 200)));
@@ -1086,6 +1072,18 @@ function renderCalendar() {
     cell.appendChild(dayNumber);
 
     if (dayRecords.length > 0) {
+      const dateLabel = `${month + 1}월 ${day}일`;
+      cell.classList.add("editable");
+      cell.tabIndex = 0;
+      cell.setAttribute("role", "button");
+      cell.setAttribute("aria-label", `${dateLabel} 당첨 기록 ${dayRecords.length}건 인원수 수정`);
+      cell.addEventListener("click", () => editCalendarDayParticipantCount(dayRecords, date));
+      cell.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        editCalendarDayParticipantCount(dayRecords, date);
+      });
+
       const names = document.createElement("div");
       names.className = "calendar-names";
       dayRecords.slice(0, 3).forEach((record) => {
@@ -1102,7 +1100,7 @@ function renderCalendar() {
       const amount = document.createElement("div");
       amount.className = "calendar-amount";
       amount.textContent = formatMoney(dayAmount);
-      cell.title = dayRecords.map((record) => getRecordSummary(record)).join("\n");
+      cell.title = `${dayRecords.map((record) => getRecordSummary(record)).join("\n")}\n눌러서 인원수 수정`;
       cell.append(names, amount);
     }
 
