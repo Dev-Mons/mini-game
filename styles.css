@@ -618,8 +618,7 @@ input:focus {
   margin-top: 7px;
 }
 
-.stat-summary span,
-.stat-summary button {
+.stat-summary span {
   border-radius: 6px;
   background: #edf2ee;
   color: var(--muted);
@@ -627,19 +626,6 @@ input:focus {
   font-size: 12px;
   font-weight: 900;
   line-height: 1.2;
-}
-
-.stat-summary .stat-amount-edit {
-  color: var(--blue);
-  text-decoration: underline;
-  text-decoration-style: dotted;
-  text-underline-offset: 2px;
-}
-
-.stat-summary .stat-amount-edit:hover,
-.stat-summary .stat-amount-edit:focus-visible {
-  background: #e2ebf5;
-  color: #174e8f;
 }
 
 .participant-count-modal {
@@ -818,6 +804,20 @@ input:focus {
 .calendar-day.has-records {
   background: #fff8f5;
   border-color: #f2d3cd;
+}
+
+.calendar-day.has-records.editable {
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.calendar-day.has-records.editable:hover,
+.calendar-day.has-records.editable:focus-visible {
+  border-color: var(--accent);
+  background: #fff0eb;
+  box-shadow: 0 4px 12px rgba(227, 75, 67, 0.14);
+  outline: none;
+  transform: translateY(-1px);
 }
 
 .calendar-day-number {
