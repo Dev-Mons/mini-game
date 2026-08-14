@@ -689,10 +689,28 @@ input:focus {
   width: 100%;
   min-height: 42px;
   margin-top: 12px;
+  border: 1px solid var(--accent-dark);
   border-radius: 8px;
-  background: #f1e8e6;
-  color: var(--accent-dark);
+  background: var(--accent);
+  box-shadow: 0 4px 12px rgba(189, 51, 46, 0.22);
+  color: #fff;
   font-weight: 900;
+  transition: background 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.participant-count-delete:hover {
+  background: var(--accent-dark);
+  box-shadow: 0 5px 14px rgba(189, 51, 46, 0.3);
+}
+
+.participant-count-delete:focus-visible {
+  outline: 3px solid rgba(227, 75, 67, 0.28);
+  outline-offset: 2px;
+}
+
+.participant-count-delete:active {
+  box-shadow: 0 2px 7px rgba(189, 51, 46, 0.24);
+  transform: translateY(1px);
 }
 
 .participant-count-actions button {
