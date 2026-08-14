@@ -803,7 +803,7 @@ function buildStats(records, activeEntries, period) {
 
   odds.forEach((entry) => {
     const key = getEntryKey(entry);
-    activeOdds.set(key, entry.percent);
+    activeOdds.set(key, (activeOdds.get(key) || 0) + entry.percent);
     if (!map.has(key)) {
       map.set(key, {
         key,
@@ -820,6 +820,9 @@ function buildStats(records, activeEntries, period) {
         periodAmount: 0,
         latestAt: null
       });
+    } else {
+      const item = map.get(key);
+      item.active = true;
     }
   });
 
@@ -972,11 +975,15 @@ function restoreHistoryRecords(records, restoredLastWinner) {
 }
 
 function getRecordKey(record) {
-  return `${record.memberId || record.name}|${record.groupName}`;
+  return normalizeNameKey(record.name);
 }
 
 function getEntryKey(entry) {
-  return `${entry.memberId || entry.name}|${entry.groupName}`;
+  return normalizeNameKey(entry.name);
+}
+
+function normalizeNameKey(name) {
+  return String(name || "").trim().normalize("NFC");
 }
 
 function getRecordEstimatedAmount(record) {
