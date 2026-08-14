@@ -34,6 +34,7 @@ const participantCountTitle = document.querySelector("#participantCountTitle");
 const participantCountDescription = document.querySelector("#participantCountDescription");
 const participantCountInput = document.querySelector("#participantCountInput");
 const participantCountError = document.querySelector("#participantCountError");
+const participantCountDelete = document.querySelector("#participantCountDelete");
 const participantCountCancel = document.querySelector("#participantCountCancel");
 const toast = document.querySelector("#toast");
 
@@ -77,6 +78,7 @@ spinButton.addEventListener("click", handleSpinButton);
 shareButton.addEventListener("click", shareCurrentState);
 shareWinnerButton.addEventListener("click", shareWinnerMessage);
 participantCountForm.addEventListener("submit", saveParticipantCountEdit);
+participantCountDelete.addEventListener("click", deleteCalendarDayRecords);
 participantCountCancel.addEventListener("click", closeParticipantCountEdit);
 participantCountModal.addEventListener("click", (event) => {
   if (event.target === participantCountModal) closeParticipantCountEdit();
@@ -949,6 +951,33 @@ function saveParticipantCountEdit(event) {
     renderHistory();
     renderWinnerShare();
     showToast("인원수 수정을 되돌렸습니다");
+  });
+}
+
+function deleteCalendarDayRecords() {
+  if (!participantCountEditContext) return;
+
+  const editContext = participantCountEditContext;
+  const matchingIds = new Set(editContext.recordIds);
+  const deletedRecords = winnerHistory.filter((record) => matchingIds.has(record.id)).map(cloneValue);
+  if (deletedRecords.length === 0) {
+    closeParticipantCountEdit();
+    return;
+  }
+
+  if (!confirm(`${editContext.scopeLabel} 당첨 기록 ${deletedRecords.length}건을 모두 삭제할까요?`)) return;
+
+  const previousLastWinner = lastWinner ? cloneValue(lastWinner) : null;
+  winnerHistory = winnerHistory.filter((record) => !matchingIds.has(record.id));
+  if (lastWinner && matchingIds.has(lastWinner.id)) {
+    lastWinner = null;
+  }
+
+  closeParticipantCountEdit();
+  commitHistory();
+  renderWinnerShare();
+  showUndoToast(`${editContext.scopeLabel} 기록 ${deletedRecords.length}건을 삭제했습니다`, () => {
+    restoreHistoryRecords(deletedRecords, previousLastWinner);
   });
 }
 

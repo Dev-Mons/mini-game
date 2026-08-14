@@ -685,6 +685,16 @@ input:focus {
   margin-top: 12px;
 }
 
+.participant-count-delete {
+  width: 100%;
+  min-height: 42px;
+  margin-top: 12px;
+  border-radius: 8px;
+  background: #f1e8e6;
+  color: var(--accent-dark);
+  font-weight: 900;
+}
+
 .participant-count-actions button {
   min-height: 42px;
   border-radius: 8px;
